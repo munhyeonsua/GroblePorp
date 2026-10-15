@@ -46,19 +46,21 @@ The app never asks for suggestions, but the Spotify app can add them by itself. 
    ```
 2. In your browser, go to **http://127.0.0.1:8000/** exactly (not "localhost").
 3. Log in, then try it:
-   - **Playlists**: open one, tap **Play**, tap a song.
-   - **Edit songs**: move one up or down, remove one (it asks first), **Rename**, **+ New playlist**.
-   - **Search**: switch between Songs, Albums and Artists, tap **Load more**, tap **+** on a song to add it to a playlist.
-   - **Devices**: open Spotify on your phone or computer, tap **Refresh**, pick a device.
+   - **Playlists**: tap the green ▶ next to a playlist to play it. Open one and tap a song.
+   - **Add songs**: in a playlist, tap **Add songs**, search, and tap **+** on songs. Tap **Done** when finished.
+   - **Edit**: in a playlist, tap **Edit** to move songs up or down, remove one (it asks first), or **Rename**. **New playlist** is at the top of Playlists.
+   - **Search**: switch between Songs, Albums and Artists, tap **Load more**, tap **+** on a song to pick a playlist.
+   - **Device**: tap the now-playing bar at the bottom to pick where music plays.
    - The bottom buttons: shuffle, previous, play/pause, next, repeat (tap repeat again to cycle off → all → one song).
 4. Press Ctrl+C in Terminal to stop.
 
 **On iPhone:** do the same checks from the Home Screen icon.
 
 ## Good to know
-- If something says "Choose a device", open the Spotify app on the device you want to play on, then pick it under **Devices**.
+- Music plays on whatever device Spotify is using. If nothing is playing, it uses the last device you played on if it's still online, otherwise it asks.
+- Phone missing from the device list? Tap **Open Spotify** in the device list, then come back to GroblePorp. The list refreshes by itself.
 - Spotify only lets this app list the songs in playlists **you own or collaborate on**. Other playlists can still be played.
 - Removing a song removes **every copy** of it from that playlist (that's how Spotify's API works).
 - New playlists are created as private.
 - Search shows 10 results at a time (Spotify's limit). Use **Load more**.
-- Log out is at the bottom of the **Devices** tab.
+- Log out is at the bottom of the **Playlists** tab.
