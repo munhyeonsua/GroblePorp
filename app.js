@@ -127,31 +127,35 @@ function row(images, title, sub, onclick, ...extra) {
     ...extra);
 }
 
+const playButton = (label, onclick) =>
+  h('button', { className: 'icon playbtn', 'aria-label': label, onclick }, h('span', { className: 'tri' }));
+
 function trackRow(t, onPlay) {
   if (!t) return h('li', { className: 'row' }, h('span', { className: 'noimg' }), h('span', { className: 'main note' }, 'Song no longer available'));
   const li = row(t.album?.images ?? t.images, t.name, names(t.artists ?? [t.show]), () => onPlay(li));
   li.dataset.uri = t.uri;
   if (t.type === 'track' && !t.is_local) {
-    li.append(h('button', { className: 'add', 'aria-label': 'Add to a playlist', onclick: () => push('Add to playlist', el => pickPlaylistView(el, t)) }, '+'));
+    li.append(h('button', { className: 'icon add', 'aria-label': 'Add to a playlist', onclick: e => addSong(t, e.currentTarget) }, '+'));
   }
   return li;
 }
 
 let toastTimer;
-function toast(msg) {
+function toast(msg, bad = false) {
   const t = $('#toast');
   t.textContent = msg;
+  t.classList.toggle('bad', bad);
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+  toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 5000 : 2500);
 }
 
 window.addEventListener('unhandledrejection', e => {
   e.preventDefault();
   const err = e.reason || {};
-  if (err.status === 429) return toast('Spotify says too many requests. Wait a minute and try again.');
-  if (err.status === 403) return toast('Spotify refused: ' + err.message);
-  toast(err.message === 'Load failed' || err.message === 'Failed to fetch' ? 'Could not reach Spotify. Check your connection.' : err.message || String(err));
+  if (err.status === 429) return toast('Spotify says too many requests. Wait a minute and try again.', true);
+  if (err.status === 403) return toast('Spotify refused: ' + err.message, true);
+  toast(err.message === 'Load failed' || err.message === 'Failed to fetch' ? 'Could not reach Spotify. Check your connection.' : err.message || String(err), true);
 });
 
 // Loads a list page by page. The offset is the number of rows already shown, so it stays right after removals.
@@ -173,6 +177,21 @@ async function pager(list, url, render, { pick = j => j, max = Infinity } = {}) 
   more.onclick = load;
   return load();
 }
+
+// ---------- Pop-up panel from the bottom (devices, add to playlist) ----------
+const sheet = $('#sheet');
+let sheetBuild = null;
+
+function openSheet(title, build) {
+  sheetBuild = build;
+  $('#sheet-title').textContent = title;
+  const body = h('div');
+  $('#sheet-body').replaceChildren(body);
+  if (!sheet.open) sheet.showModal();
+  return build(body);
+}
+sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); }); // tap outside closes
+$('#sheet-close').onclick = () => sheet.close();
 
 // ---------- Screens (a simple stack, so Back keeps scroll position) ----------
 const main = $('#view');
@@ -213,15 +232,74 @@ function back() {
 const changed = () => stack.slice(0, -1).forEach(v => { v.stale = v.reload; });
 
 const tabs = {
-  search: ['Search', searchView],
   playlists: ['Playlists', playlistsView, true],
-  devices: ['Devices', devicesView],
+  search: ['Search', searchView],
 };
 
 function openTab(name) {
+  if (name !== 'search') setAddTarget(null);
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   stack.splice(0).forEach(v => v.el.remove());
   return push(...tabs[name]);
+}
+
+// ---------- Adding songs ----------
+let addTarget = null; // set by a playlist's "Add songs": then + adds straight to it
+
+function setAddTarget(p) {
+  addTarget = p;
+  $('#adding').hidden = !p;
+  $('#adding-name').textContent = p?.name || '';
+}
+
+$('#adding-done').onclick = () => {
+  const p = addTarget;
+  openTab('playlists');
+  push(p.name, el => playlistView(el, p), true);
+};
+
+async function addSong(t, btn) {
+  if (!addTarget) return openSheet('Add to playlist', el => pickPlaylistSheet(el, t));
+  btn.disabled = true;
+  try {
+    await addTo(addTarget, t);
+    btn.textContent = '✓';
+  } catch (e) {
+    btn.disabled = false;
+    throw e;
+  }
+}
+
+async function addTo(p, t) {
+  await api(`/playlists/${p.id}/items`, { method: 'POST', body: { uris: [t.uri] } });
+  localStorage.setItem('last_playlist_id', p.id);
+  localStorage.setItem('last_playlist_name', p.name);
+  toast(`Added to ${p.name}`);
+  changed();
+}
+
+async function pickPlaylistSheet(el, t) {
+  el.append(h('p', { className: 'note' }, t.name));
+  const choose = p => async e => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      await addTo(p, t);
+      sheet.close();
+    } finally {
+      b.disabled = false;
+    }
+  };
+  const lastId = localStorage.getItem('last_playlist_id');
+  if (lastId) {
+    const last = { id: lastId, name: localStorage.getItem('last_playlist_name') };
+    el.append(h('ul', { className: 'list' }, row(null, last.name, 'Last used', choose(last))));
+  }
+  const ul = el.appendChild(h('ul', { className: 'list' }));
+  const me = await getMe();
+  await pager(ul, '/me/playlists?limit=50', p => canEdit(p, me)
+    ? row(p.images, p.name, '', choose(p))
+    : h('li', { hidden: true })); // hidden placeholder keeps paging offsets right
 }
 
 // ---------- Search ----------
@@ -270,11 +348,15 @@ async function artistView(el, a) {
 
 // ---------- Playlists ----------
 async function playlistsView(el) {
-  el.append(h('button', { className: 'wide', onclick: createPlaylist }, '+ New playlist'));
+  el.append(h('ul', { className: 'list' }, h('li', { className: 'row' },
+    h('span', { className: 'noimg plus' }, '+'),
+    h('button', { className: 'main', onclick: createPlaylist }, h('b', {}, 'New playlist')))));
   const ul = el.appendChild(h('ul', { className: 'list' }));
+  el.append(h('button', { className: 'quiet wide', onclick: () => logout() }, 'Log out'));
   await pager(ul, '/me/playlists?limit=50', p => row(p.images, p.name,
     p.items ? `${p.items.total} songs` : p.owner?.display_name,
-    () => push(p.name, el => playlistView(el, p), true)));
+    () => push(p.name, el => playlistView(el, p), true),
+    playButton(`Play ${p.name}`, () => play({ context_uri: p.uri }))));
 }
 
 async function createPlaylist() {
@@ -290,17 +372,24 @@ async function playlistView(el, p) {
   const view = stack.at(-1);
   const editable = canEdit(p, await getMe());
   const ul = h('ul', { className: 'list' });
-  el.append(h('div', { className: 'actions' },
-    h('button', { className: 'primary', onclick: () => play({ context_uri: p.uri }) }, 'Play'),
-    editable && h('button', { onclick: rename }, 'Rename'),
-    editable && h('button', {
-      'aria-pressed': 'false',
-      onclick: e => e.currentTarget.setAttribute('aria-pressed', String(ul.classList.toggle('editing'))),
-    }, 'Edit songs')));
+  const playBtn = h('button', { className: 'primary', onclick: () => play({ context_uri: p.uri }) }, 'Play');
+  const bar = el.appendChild(h('div', { className: 'actions' }, playBtn));
   if (!editable) {
     el.append(h('p', { className: 'note' }, 'Spotify only lets apps list the songs in playlists you own or collaborate on. You can still play it.'));
     return;
   }
+  const addBtn = h('button', { onclick: () => { setAddTarget(p); openTab('search'); } }, 'Add songs');
+  const renameBtn = h('button', { hidden: true, onclick: rename }, 'Rename');
+  const editBtn = h('button', {
+    onclick: () => {
+      const on = ul.classList.toggle('editing');
+      editBtn.textContent = on ? 'Done' : 'Edit';
+      editBtn.classList.toggle('primary', on);
+      playBtn.hidden = addBtn.hidden = on;
+      renameBtn.hidden = !on;
+    },
+  }, 'Edit');
+  bar.append(addBtn, renameBtn, editBtn);
   el.append(ul);
 
   const idx = li => [...ul.children].indexOf(li);
@@ -345,73 +434,103 @@ async function playlistView(el, p) {
   });
 }
 
-async function pickPlaylistView(el, t) {
-  el.append(h('p', { className: 'note' }, `Add "${t.name}" to:`));
-  const ul = el.appendChild(h('ul', { className: 'list' }));
-  const me = await getMe();
-  await pager(ul, '/me/playlists?limit=50', p => canEdit(p, me)
-    ? row(p.images, p.name, '', async e => {
-      e.currentTarget.disabled = true;
-      await api(`/playlists/${p.id}/items`, { method: 'POST', body: { uris: [t.uri] } });
-      toast(`Added to ${p.name}`);
-      changed();
-      back();
-    })
-    : h('li', { hidden: true })); // hidden placeholder keeps paging offsets right
-}
-
 // ---------- Playback ----------
-let state = null;
-let pendingPlay = null;
+let state = null; // last known player state (or the instant guess after a tap)
+let inFlight = 0; // commands Spotify hasn't answered yet
+let cmdSeq = 0;   // goes up with every command, so older state checks get ignored
+let pending = null; // a command waiting for you to choose a device
 
-async function command(method, path, body) {
+const isNoDevice = e => e.status === 404 && (e.reason === 'NO_ACTIVE_DEVICE' || /device/i.test(e.message));
+const withDevice = (path, id) => `${path}${path.includes('?') ? '&' : '?'}device_id=${encodeURIComponent(id)}`;
+
+// Updates the buttons at once, then tells Spotify. Switches back with an error if Spotify says no.
+async function command(method, path, body, optimistic) {
+  const before = state;
+  if (optimistic) { state = { ...state }; optimistic(state); renderPlayer(); }
+  inFlight++;
+  cmdSeq++;
   try {
     await api(path, { method, body });
   } catch (e) {
-    if (e.status !== 404 || !(e.reason === 'NO_ACTIVE_DEVICE' || /device/i.test(e.message))) throw e;
-    // No device is playing: let the user pick one, then play what they tapped there
-    pendingPlay = path === '/me/player/play' ? body || {} : null;
-    toast('Choose a device to play on.');
-    openTab('devices');
-    return;
+    state = before;
+    renderPlayer();
+    if (!isNoDevice(e)) throw e;
+    // Nothing is active: use the device you last played on if it's still online, otherwise ask
+    const d = !path.includes('device_id=') && await usableDevice();
+    if (d) return command(method, withDevice(path, d.id), body, optimistic);
+    return openDevices({ method, path, body, optimistic });
+  } finally {
+    inFlight--;
   }
-  setTimeout(refreshPlayer, 700);
+  setTimeout(refreshPlayer, 1000);
 }
 
-const play = body => command('PUT', '/me/player/play', body);
+async function usableDevice() {
+  const { devices } = await api('/me/player/devices');
+  const last = localStorage.getItem('last_device');
+  return devices.find(d => d.is_active) || devices.find(d => d.id && d.id === last && !d.is_restricted);
+}
 
-async function devicesView(el) {
-  el.append(
-    h('p', { className: 'note' }, 'Open Spotify on the phone, computer or speaker you want, then tap Refresh.'),
-    h('button', { className: 'wide', onclick: () => openTab('devices') }, 'Refresh'));
+function openDevices(cmd = null) {
+  pending = cmd;
+  return openSheet('Play on', devicesSheet);
+}
+
+async function devicesSheet(el) {
   const ul = el.appendChild(h('ul', { className: 'list' }));
   const { devices } = await api('/me/player/devices');
-  devices.forEach(d => {
-    const r = row(false, d.name, (d.is_active ? 'Playing here · ' : '') + d.type, async () => {
-      if (pendingPlay) await api(`/me/player/play?device_id=${encodeURIComponent(d.id)}`, { method: 'PUT', body: pendingPlay });
-      else await api('/me/player', { method: 'PUT', body: { device_ids: [d.id] } });
-      pendingPlay = null;
-      toast(`Now using ${d.name}`);
-      setTimeout(() => { refreshPlayer(); if (stack.at(-1)?.title === 'Devices') openTab('devices'); }, 700);
-    });
+  const last = localStorage.getItem('last_device');
+  const rank = d => (d.is_active ? 2 : d.id && d.id === last ? 1 : 0);
+  devices.sort((a, b) => rank(b) - rank(a)).forEach(d => {
+    const r = row(false, d.name, d.is_active ? 'Playing here' : d.id === last ? `Last used · ${d.type}` : d.type, () => chooseDevice(d));
+    r.classList.toggle('current', d.is_active);
     r.querySelector('.main').disabled = !d.id || d.is_restricted;
     ul.append(r);
   });
-  if (!devices.length) el.append(h('p', { className: 'note' }, 'No devices found. Open the Spotify app somewhere first.'));
-  el.append(h('button', { className: 'wide', onclick: () => logout() }, 'Log out'));
+  if (!devices.length) ul.append(h('li', { className: 'note' }, 'No devices are online right now.'));
+  el.append(
+    h('p', { className: 'note' }, 'Phone not in the list? Open the Spotify app on it, then come back here.'),
+    h('div', { className: 'actions' },
+      h('a', { className: 'button primary', href: 'spotify:' }, 'Open Spotify'),
+      h('button', { onclick: () => openSheet('Play on', devicesSheet) }, 'Refresh')));
+}
+
+function chooseDevice(d) {
+  const cmd = pending;
+  sheet.close();
+  localStorage.setItem('last_device', d.id);
+  const showDevice = s => { s.device = d; cmd?.optimistic?.(s); };
+  if (cmd) return command(cmd.method, withDevice(cmd.path, d.id), cmd.body, showDevice);
+  return command('PUT', '/me/player', { device_ids: [d.id] }, showDevice);
 }
 
 async function refreshPlayer() {
-  if (document.hidden || !loggedIn()) return;
+  if (document.hidden || !loggedIn() || inFlight) return;
+  const seq = cmdSeq;
+  let s;
   try {
-    state = await api('/me/player?additional_types=episode'); // empty when nothing is active
+    s = await api('/me/player?additional_types=episode'); // empty when nothing is active
   } catch {
-    return; // background check; a failed one just waits for the next
+    return; // background check; the next one will try again
   }
+  if (inFlight || seq !== cmdSeq) return; // a newer tap is on its way; don't undo its instant update
+  state = s;
+  renderPlayer();
+}
+
+function renderPlayer() {
   const t = state?.item;
-  $('#np-art').replaceChildren(thumb(t?.album?.images ?? t?.images));
+  if (state?.device?.id) localStorage.setItem('last_device', state.device.id);
+  const art = t?.album?.images ?? t?.images;
+  const url = art?.at(-1)?.url || '';
+  if ($('#np-art').dataset.url !== url) { // only swap the picture when the song changes
+    $('#np-art').dataset.url = url;
+    $('#np-art').replaceChildren(thumb(art));
+  }
   $('#np-title').textContent = t?.name || 'Nothing playing';
-  $('#np-sub').textContent = t ? `${names(t.artists ?? [t.show])} · ${state.device?.name || ''}` : 'Pick a device under Devices';
+  $('#np-sub').textContent = t ? names(t.artists ?? [t.show]) : 'Tap here to choose a device';
+  $('#np-device').textContent = state?.device?.name || 'Choose';
+  $('#now').classList.toggle('pending', !!state?.pending);
   $('#play').classList.toggle('playing', !!state?.is_playing);
   $('#play').setAttribute('aria-label', state?.is_playing ? 'Pause' : 'Play');
   $('#shuffle').classList.toggle('on', !!state?.shuffle_state);
@@ -422,19 +541,36 @@ async function refreshPlayer() {
 }
 
 const nextRepeat = { off: 'context', context: 'track', track: 'off' };
-$('#play').onclick = () => command('PUT', state?.is_playing ? '/me/player/pause' : '/me/player/play');
-$('#next').onclick = () => command('POST', '/me/player/next');
-$('#prev').onclick = () => command('POST', '/me/player/previous');
-$('#shuffle').onclick = () => command('PUT', `/me/player/shuffle?state=${!state?.shuffle_state}`);
-$('#repeat').onclick = () => command('PUT', `/me/player/repeat?state=${nextRepeat[state?.repeat_state || 'off']}`);
+const starting = s => { s.is_playing = true; s.pending = true; };
+const play = body => command('PUT', '/me/player/play', body, starting);
+
+$('#play').onclick = () => (state?.is_playing
+  ? command('PUT', '/me/player/pause', null, s => { s.is_playing = false; })
+  : command('PUT', '/me/player/play', null, s => { s.is_playing = true; }));
+$('#next').onclick = () => command('POST', '/me/player/next', null, starting);
+$('#prev').onclick = () => command('POST', '/me/player/previous', null, starting);
+$('#shuffle').onclick = () => {
+  const on = !state?.shuffle_state;
+  return command('PUT', `/me/player/shuffle?state=${on}`, null, s => { s.shuffle_state = on; });
+};
+$('#repeat').onclick = () => {
+  const next = nextRepeat[state?.repeat_state || 'off'];
+  return command('PUT', `/me/player/repeat?state=${next}`, null, s => { s.repeat_state = next; });
+};
+$('#now').onclick = () => openDevices();
 $('#back').onclick = back;
 document.querySelectorAll('nav button').forEach(b => { b.onclick = () => openTab(b.dataset.tab); });
-setInterval(refreshPlayer, 10000);
-document.addEventListener('visibilitychange', refreshPlayer);
+setInterval(refreshPlayer, 5000);
+document.addEventListener('visibilitychange', () => {
+  refreshPlayer();
+  // Back from the Spotify app: show the phone in the list
+  if (!document.hidden && sheet.open && sheetBuild === devicesSheet) openSheet('Play on', devicesSheet);
+});
 
 // ---------- Start ----------
 function showLogin(msg) {
   stack.length = 0;
+  sheet.close();
   document.body.classList.add('out');
   const ready = CLIENT_ID && !CLIENT_ID.startsWith('PASTE');
   main.replaceChildren(h('div', { className: 'login' },
@@ -457,6 +593,7 @@ async function start() {
   document.body.classList.remove('out');
   main.replaceChildren();
   openTab('playlists');
+  renderPlayer();
   refreshPlayer();
 }
 
