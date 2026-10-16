@@ -50,7 +50,7 @@ The app never asks for suggestions, but the Spotify app can add them by itself. 
    - **Add songs**: in a playlist, tap **Add songs**, search, and tap **+** on songs. Tap **Done** when finished.
    - **Edit**: in a playlist, tap **Edit** to move songs up or down, remove one (it asks first), or **Rename**. **New playlist** is at the top of Playlists.
    - **Search**: switch between Songs, Albums and Artists, tap **Load more**, tap **+** on a song to pick a playlist.
-   - **Device**: tap the now-playing bar at the bottom to pick where music plays.
+   - **Device**: the green line in the bottom bar shows where music is playing. Tap the bar to pick another device.
    - The bottom buttons: shuffle, previous, play/pause, next, repeat (tap repeat again to cycle off → all → one song).
 4. Press Ctrl+C in Terminal to stop.
 
@@ -63,4 +63,5 @@ The app never asks for suggestions, but the Spotify app can add them by itself. 
 - Removing a song removes **every copy** of it from that playlist (that's how Spotify's API works).
 - New playlists are created as private.
 - Search shows 10 results at a time (Spotify's limit). Use **Load more**.
-- Log out is at the bottom of the **Playlists** tab.
+- Log out is in **Settings** (the gear at the top right).
+- **Jam:** Spotify's Web API has no way to turn Jam off, so GroblePorp can't do it for you. **Settings › Privacy** lists the iPhone switches to turn off instead. While GroblePorp is open, it shows "Playback was changed from somewhere else." if the song, device, play/pause or upcoming queue changes without you doing it in GroblePorp.
