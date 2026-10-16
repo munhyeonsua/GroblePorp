@@ -64,4 +64,4 @@ The app never asks for suggestions, but the Spotify app can add them by itself. 
 - New playlists are created as private.
 - Search shows 10 results at a time (Spotify's limit). Use **Load more**.
 - Log out is in **Settings** (the gear at the top right).
-- **Jam:** Spotify's Web API has no way to turn Jam off, so GroblePorp can't do it for you. **Settings › Privacy** lists the iPhone switches to turn off instead. While GroblePorp is open, it shows "Playback was changed from somewhere else." if the song, device, play/pause or upcoming queue changes without you doing it in GroblePorp.
+- **Jam:** Spotify's Web API has no way to turn Jam off, so GroblePorp can't do it for you. **Settings › Privacy** sums up what Spotify's own Jam help page says, with a link to it. While GroblePorp is open, it shows "Playback was changed from somewhere else." if the song, device, play/pause or upcoming queue changes without you doing it in GroblePorp.

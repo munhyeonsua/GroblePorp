@@ -444,17 +444,18 @@ function settingsView(el) {
     h('button', { className: 'quiet wide', onclick: () => logout() }, 'Log out'));
 }
 
-// Spotify's Web API has no Jam setting (checked October 2026), so this explains the phone settings instead.
+// Spotify's Web API has no Jam setting (checked October 2026). This only repeats Spotify's own Jam help page.
 function privacyView(el) {
   el.append(
-    h('p', {}, 'Spotify Jam can let people nearby join and control what plays. Spotify gives apps like GroblePorp no way to switch Jam off, so do it on your iPhone:'),
-    h('ol', { className: 'steps' },
-      h('li', {}, h('b', {}, 'Local Network: off'), h('br'), 'Settings › Apps › Spotify › Local Network'),
-      h('li', {}, h('b', {}, 'SharePlay: off for Spotify'), h('br'), 'Can’t find it? Search “SharePlay” in the Settings app.'),
-      h('li', {}, h('b', {}, 'Bluetooth: off'), h('br'), 'Settings › Apps › Spotify › Bluetooth'),
-      h('li', {}, h('b', {}, 'Auto-invite: off'), h('br'),
-        'In the Spotify app, open the device picker and turn off “Auto-invite people nearby to a Jam”. It can turn itself back on, so check it now and then.')),
-    h('p', { className: 'note' }, 'Turning off Local Network or Bluetooth may stop Spotify on your phone from finding some speakers nearby.'),
+    h('p', {}, 'Spotify doesn’t let apps like GroblePorp turn Jam off, or even see if one is running.'),
+    h('p', {}, 'What Spotify’s Jam help page says:'),
+    h('ul', { className: 'steps' },
+      h('li', {}, 'A Jam can start by itself when you connect to a smart speaker or most Bluetooth speakers.'),
+      h('li', {}, 'People on the same Wi-Fi, or with their phone near yours (Bluetooth), get invited.'),
+      h('li', {}, 'Anyone in the Jam can change what’s playing, unless the host turns off ', h('b', {}, 'Let others change what’s playing'), '. Then guests can only add songs.'),
+      h('li', {}, 'The host can tap ', h('b', {}, 'Remove all participants'), ', or leave the Jam, which ends it for everyone.'),
+      h('li', {}, 'Invites can be turned off in Spotify’s device picker, and ', h('b', {}, 'Let others Jam on this speaker'), ' can be turned off for a speaker. These may only show while a Jam is running or you’re on a speaker.')),
+    h('a', { className: 'button wide', href: 'https://support.spotify.com/article/jam/', target: '_blank', rel: 'noopener noreferrer' }, 'Open Spotify’s Jam help page'),
     h('p', { className: 'note' }, 'The bar at the bottom always shows which device is playing. While GroblePorp is open, it tells you if playback is changed from somewhere else.'));
 }
 
