@@ -141,13 +141,13 @@ function trackRow(t, onPlay) {
 }
 
 let toastTimer;
-function toast(msg, bad = false) {
+function toast(msg, bad = false, ms = bad ? 5000 : 2500) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.toggle('bad', bad);
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 5000 : 2500);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
 window.addEventListener('unhandledrejection', e => {
@@ -201,6 +201,7 @@ function showHeader() {
   const top = stack.at(-1);
   $('#title').textContent = top.title;
   $('#back').hidden = stack.length < 2;
+  $('#settings').hidden = stack.length > 1;
 }
 
 function push(title, build, reload = false) {
@@ -229,7 +230,10 @@ function back() {
 }
 
 // After an edit, playlist screens underneath reload when you go back to them.
-const changed = () => stack.slice(0, -1).forEach(v => { v.stale = v.reload; });
+const changed = () => {
+  lastWrite = Date.now(); // our own playlist edits can shift the play queue
+  stack.slice(0, -1).forEach(v => { v.stale = v.reload; });
+};
 
 const tabs = {
   playlists: ['Playlists', playlistsView, true],
@@ -352,7 +356,6 @@ async function playlistsView(el) {
     h('span', { className: 'noimg plus' }, '+'),
     h('button', { className: 'main', onclick: createPlaylist }, h('b', {}, 'New playlist')))));
   const ul = el.appendChild(h('ul', { className: 'list' }));
-  el.append(h('button', { className: 'quiet wide', onclick: () => logout() }, 'Log out'));
   await pager(ul, '/me/playlists?limit=50', p => row(p.images, p.name,
     p.items ? `${p.items.total} songs` : p.owner?.display_name,
     () => push(p.name, el => playlistView(el, p), true),
@@ -434,11 +437,35 @@ async function playlistView(el, p) {
   });
 }
 
+// ---------- Settings ----------
+function settingsView(el) {
+  el.append(
+    h('ul', { className: 'list' }, row(false, 'Privacy', 'Stop other people controlling your music', () => push('Privacy', privacyView))),
+    h('button', { className: 'quiet wide', onclick: () => logout() }, 'Log out'));
+}
+
+// Spotify's Web API has no Jam setting (checked October 2026), so this explains the phone settings instead.
+function privacyView(el) {
+  el.append(
+    h('p', {}, 'Spotify Jam can let people nearby join and control what plays. Spotify gives apps like GroblePorp no way to switch Jam off, so do it on your iPhone:'),
+    h('ol', { className: 'steps' },
+      h('li', {}, h('b', {}, 'Local Network: off'), h('br'), 'Settings › Apps › Spotify › Local Network'),
+      h('li', {}, h('b', {}, 'SharePlay: off for Spotify'), h('br'), 'Can’t find it? Search “SharePlay” in the Settings app.'),
+      h('li', {}, h('b', {}, 'Bluetooth: off'), h('br'), 'Settings › Apps › Spotify › Bluetooth'),
+      h('li', {}, h('b', {}, 'Auto-invite: off'), h('br'),
+        'In the Spotify app, open the device picker and turn off “Auto-invite people nearby to a Jam”. It can turn itself back on, so check it now and then.')),
+    h('p', { className: 'note' }, 'Turning off Local Network or Bluetooth may stop Spotify on your phone from finding some speakers nearby.'),
+    h('p', { className: 'note' }, 'The bar at the bottom always shows which device is playing. While GroblePorp is open, it tells you if playback is changed from somewhere else.'));
+}
+
 // ---------- Playback ----------
 let state = null; // last known player state (or the instant guess after a tap)
 let inFlight = 0; // commands Spotify hasn't answered yet
 let cmdSeq = 0;   // goes up with every command, so older state checks get ignored
 let pending = null; // a command waiting for you to choose a device
+let lastWrite = 0;  // when GroblePorp last changed something at Spotify
+let seen = null;    // last player check, to spot changes made somewhere else
+const GRACE = 10000; // changes this soon after something we did count as ours
 
 const isNoDevice = e => e.status === 404 && (e.reason === 'NO_ACTIVE_DEVICE' || /device/i.test(e.message));
 const withDevice = (path, id) => `${path}${path.includes('?') ? '&' : '?'}device_id=${encodeURIComponent(id)}`;
@@ -449,6 +476,7 @@ async function command(method, path, body, optimistic) {
   if (optimistic) { state = { ...state }; optimistic(state); renderPlayer(); }
   inFlight++;
   cmdSeq++;
+  lastWrite = Date.now();
   try {
     await api(path, { method, body });
   } catch (e) {
@@ -461,6 +489,7 @@ async function command(method, path, body, optimistic) {
     return openDevices({ method, path, body, optimistic });
   } finally {
     inFlight--;
+    lastWrite = Date.now();
   }
   setTimeout(refreshPlayer, 1000);
 }
@@ -516,6 +545,40 @@ async function refreshPlayer() {
   if (inFlight || seq !== cmdSeq) return; // a newer tap is on its way; don't undo its instant update
   state = s;
   renderPlayer();
+  watchOutside(s);
+}
+
+const outsideNotice = () => toast('Playback was changed from somewhere else.', false, 6000);
+
+// True if the device, song or play/pause changed in a way a song simply ending can't explain.
+function changedElsewhere(prev, s, elapsed) {
+  if (!prev?.item || !s?.item) return false;
+  if (prev.device?.id !== s.device?.id) return true;
+  const ended = prev.is_playing && prev.item.duration_ms - prev.progress_ms - elapsed < 2000;
+  if (prev.item.uri !== s.item.uri) return !ended;
+  return prev.is_playing !== s.is_playing && !ended;
+}
+
+async function watchOutside(s) {
+  const now = Date.now();
+  const prev = seen;
+  seen = { ...prev, s, at: now };
+  // Only compare back-to-back checks taken well after anything GroblePorp did
+  if (prev && now - prev.at < 12000 && prev.at - lastWrite > GRACE && changedElsewhere(prev.s, s, now - prev.at)) {
+    return outsideNotice();
+  }
+  // Every 15s, see if the next few queued songs changed while the same song kept playing
+  if (!s?.item || now - (prev?.queueAt || 0) < 15000) return;
+  let q;
+  try {
+    q = (await api('/me/player/queue'))?.queue?.slice(0, 3).map(i => i?.uri).join(' ') || '';
+  } catch {
+    return;
+  }
+  const before = seen;
+  const ours = before.queueAt - lastWrite <= GRACE || Date.now() - lastWrite <= GRACE;
+  if (q && before.queue && before.queueFor === s.item.uri && before.queue !== q && !ours && now - before.queueAt < 30000) outsideNotice();
+  Object.assign(seen, { queue: q, queueFor: s.item.uri, queueAt: Date.now() });
 }
 
 function renderPlayer() {
@@ -528,8 +591,9 @@ function renderPlayer() {
     $('#np-art').replaceChildren(thumb(art));
   }
   $('#np-title').textContent = t?.name || 'Nothing playing';
-  $('#np-sub').textContent = t ? names(t.artists ?? [t.show]) : 'Tap here to choose a device';
-  $('#np-device').textContent = state?.device?.name || 'Choose';
+  $('#np-sub').textContent = t ? names(t.artists ?? [t.show]) : '';
+  $('#np-device').textContent = state?.device?.name || 'No device · tap to choose';
+  $('#now').classList.toggle('nodev', !state?.device);
   $('#now').classList.toggle('pending', !!state?.pending);
   $('#play').classList.toggle('playing', !!state?.is_playing);
   $('#play').setAttribute('aria-label', state?.is_playing ? 'Pause' : 'Play');
@@ -559,6 +623,7 @@ $('#repeat').onclick = () => {
 };
 $('#now').onclick = () => openDevices();
 $('#back').onclick = back;
+$('#settings').onclick = () => push('Settings', settingsView);
 document.querySelectorAll('nav button').forEach(b => { b.onclick = () => openTab(b.dataset.tab); });
 setInterval(refreshPlayer, 5000);
 document.addEventListener('visibilitychange', () => {

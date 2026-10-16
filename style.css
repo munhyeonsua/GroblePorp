@@ -73,7 +73,7 @@ header h1 { flex: 1; min-width: 0; margin: 0; font-size: 22px; line-height: var(
 #adding { width: 100%; display: flex; align-items: center; gap: var(--gap); background: var(--surface); border-radius: 12px; padding: 4px 4px 4px 14px; }
 #adding span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-main { padding: var(--gap) var(--pad) calc(env(safe-area-inset-bottom) + 220px); }
+main { padding: var(--gap) var(--pad) calc(env(safe-area-inset-bottom) + 236px); }
 
 /* Lists */
 .list { list-style: none; margin: 0; padding: 0; }
@@ -143,9 +143,12 @@ footer {
 #now .meta { flex: 1; min-width: 0; }
 #now b, #now small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #now.pending .meta { opacity: .45; }
-#now .dev { flex: none; max-width: 84px; display: flex; flex-direction: column; align-items: center; color: var(--accent); }
-#now .dev svg { width: 22px; height: 22px; fill: currentColor; }
-#now .dev small { max-width: 84px; color: inherit; font-size: 12px; }
+#now .dev { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--accent); font-size: 14px; font-weight: 600; }
+#now .dev svg { width: 15px; height: 15px; flex: none; fill: currentColor; }
+#now .dev span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#now.nodev .dev { color: var(--dim); font-weight: 400; }
+#now .chev { flex: none; font-size: 28px; color: var(--dim); }
+#settings svg { width: 26px; height: 26px; fill: currentColor; }
 #controls { display: flex; justify-content: space-between; align-items: center; padding: 4px var(--pad); }
 #controls button { position: relative; width: 56px; height: 56px; padding: 0; background: none; border-radius: 50%; color: var(--dim); }
 #controls svg { width: 28px; height: 28px; fill: currentColor; }
@@ -180,7 +183,7 @@ nav button.active { color: var(--text); }
 #toast {
   position: fixed;
   left: var(--pad); right: var(--pad);
-  bottom: calc(env(safe-area-inset-bottom) + 212px);
+  bottom: calc(env(safe-area-inset-bottom) + 228px);
   z-index: 4;
   padding: 12px 14px;
   border-radius: 12px;
@@ -188,6 +191,9 @@ nav button.active { color: var(--text); }
   font-size: 15px;
 }
 #toast.bad { background: #6b2020; }
+
+.steps { padding-left: 22px; }
+.steps li { margin-bottom: 14px; line-height: 1.4; }
 
 .login { max-width: 420px; margin: 0 auto; padding-top: calc(env(safe-area-inset-top) + 40px); display: flex; flex-direction: column; gap: var(--gap); }
 .login h1 { margin: 0 0 8px; }
